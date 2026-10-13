@@ -3,10 +3,10 @@ const canvas = document.getElementById('matrix');
 const ctx = canvas.getContext('2d');
 function resize() { canvas.width = innerWidth; canvas.height = innerHeight; }
 resize(); addEventListener('resize', resize);
-const chars = 'アイウエオカキクケコサシスセソタチツテト0123456789ABCDEF<>[]{}#$%&';
+const chars = 'アイウエオカキクケコサシスセソ0123456789ABCDEF<>[]{}#$%&';
 const fs = 14; let cols, drops;
-function init() { cols = Math.floor(canvas.width / fs); drops = Array(cols).fill(1); }
-function draw() {
+function initM() { cols = Math.floor(canvas.width / fs); drops = Array(cols).fill(1); }
+function drawM() {
   ctx.fillStyle = 'rgba(5,8,15,0.05)'; ctx.fillRect(0,0,canvas.width,canvas.height);
   ctx.fillStyle = '#00ff9f'; ctx.font = fs + 'px monospace';
   for (let i = 0; i < drops.length; i++) {
@@ -15,13 +15,41 @@ function draw() {
     drops[i]++;
   }
 }
-init(); setInterval(draw, 50); addEventListener('resize', init);
+initM(); setInterval(drawM, 50); addEventListener('resize', initM);
+
+// ===== Models =====
+const MODELS = {
+  gemini: [
+    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash' },
+    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
+    { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' }
+  ],
+  openai: [
+    { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' },
+    { id: 'gpt-6-luna', name: 'GPT-6 Luna' },
+    { id: 'gpt-5-nano', name: 'GPT-5 Nano' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano' },
+    { id: 'gpt-4o', name: 'GPT-4o' }
+  ],
+  deepseek: [
+    { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+    { id: 'deepseek-flash', name: 'DeepSeek Flash (V4.1)' },
+    { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' }
+  ]
+};
 
 // ===== State =====
 const state = {
-  apiKey: localStorage.getItem('hackerai_key') || '',
+  provider: localStorage.getItem('hackerai_provider') || 'gemini',
+  geminiKey: localStorage.getItem('hackerai_key') || '',
+  openaiKey: localStorage.getItem('hackerai_openai') || '',
+  deepseekKey: localStorage.getItem('hackerai_deepseek') || '',
   model: localStorage.getItem('hackerai_model') || 'gemini-3.8-flash',
-  systemPrompt: localStorage.getItem('hackerai_system') || 'تو یک دستیار هوشمند و مفید هستی. پاسخ‌ها را واضح، کوتاه و مرتب بنویس.',
+  systemPrompt: localStorage.getItem('hackerai_system') || 'تو یک دستیار هوشمند و مفید هستی. پاسخ‌ها را واضح و کوتاه بنویس.',
+  tgToken: localStorage.getItem('hackerai_tg') || '',
   history: JSON.parse(localStorage.getItem('hackerai_history') || '[]'),
   isOnline: false,
   mode: 'chat',
@@ -34,7 +62,7 @@ const userInput = $('user-input');
 const sendBtn = $('send-btn');
 const statusDot = $('status-dot');
 const statusText = $('status-text');
-const apiKeyInput = $('api-key');
+const providerSelect = $('provider-select');
 const modelSelect = $('model-select');
 const systemPromptEl = $('system-prompt');
 const keyStatus = $('key-status');
@@ -51,49 +79,102 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
   };
 });
 
-// ===== Settings =====
-apiKeyInput.value = state.apiKey;
-modelSelect.value = state.model;
-systemPromptEl.value = state.systemPrompt;
+// ===== Provider / Models UI =====
+function fillModels() {
+  const list = MODELS[state.provider] || MODELS.gemini;
+  modelSelect.innerHTML = list.map(m =>
+    `<option value="${m.id}" ${m.id === state.model ? 'selected' : ''}>${m.name}</option>`
+  ).join('');
+  if (!list.find(m => m.id === state.model)) {
+    state.model = list[0].id;
+    modelSelect.value = state.model;
+  }
+}
 
-$('toggle-key').onclick = () => {
-  apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
+function showKeyGroup() {
+  $('key-gemini-group').style.display = state.provider === 'gemini' ? 'block' : 'none';
+  $('key-openai-group').style.display = state.provider === 'openai' ? 'block' : 'none';
+  $('key-deepseek-group').style.display = state.provider === 'deepseek' ? 'block' : 'none';
+}
+
+providerSelect.value = state.provider;
+$('api-key').value = state.geminiKey;
+$('openai-key').value = state.openaiKey;
+$('deepseek-key').value = state.deepseekKey;
+$('tg-token').value = state.tgToken;
+systemPromptEl.value = state.systemPrompt;
+fillModels();
+showKeyGroup();
+
+providerSelect.onchange = () => {
+  state.provider = providerSelect.value;
+  const list = MODELS[state.provider];
+  state.model = list[0].id;
+  fillModels();
+  showKeyGroup();
 };
 
+document.querySelectorAll('.toggle-vis').forEach(btn => {
+  btn.onclick = () => {
+    const inp = $(btn.dataset.target);
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  };
+});
+
+function currentKey() {
+  if (state.provider === 'openai') return state.openaiKey;
+  if (state.provider === 'deepseek') return state.deepseekKey;
+  return state.geminiKey;
+}
+
 $('save-settings').onclick = () => {
-  const key = apiKeyInput.value.trim();
-  if (!key) {
-    showToast('کلید را وارد کن');
-    keyStatus.textContent = '✗ خالی است'; keyStatus.className = 'key-status error';
-    return;
-  }
-  state.apiKey = key;
+  state.provider = providerSelect.value;
+  state.geminiKey = $('api-key').value.trim();
+  state.openaiKey = $('openai-key').value.trim();
+  state.deepseekKey = $('deepseek-key').value.trim();
   state.model = modelSelect.value;
   state.systemPrompt = systemPromptEl.value.trim() || state.systemPrompt;
-  localStorage.setItem('hackerai_key', state.apiKey);
+  state.tgToken = $('tg-token').value.trim();
+
+  localStorage.setItem('hackerai_provider', state.provider);
+  localStorage.setItem('hackerai_key', state.geminiKey);
+  localStorage.setItem('hackerai_openai', state.openaiKey);
+  localStorage.setItem('hackerai_deepseek', state.deepseekKey);
   localStorage.setItem('hackerai_model', state.model);
   localStorage.setItem('hackerai_system', state.systemPrompt);
+  localStorage.setItem('hackerai_tg', state.tgToken);
+
+  const key = currentKey();
+  if (!key) {
+    keyStatus.textContent = '✗ کلید این ارائه‌دهنده خالی است';
+    keyStatus.className = 'key-status error';
+    updateStatus(false);
+    return;
+  }
   updateStatus(true);
-  keyStatus.textContent = '✓ متصل شد'; keyStatus.className = 'key-status success';
+  keyStatus.textContent = '✓ متصل شد (' + state.provider + ')';
+  keyStatus.className = 'key-status success';
   showToast('ذخیره شد');
   document.querySelector('[data-section="chat"]').click();
 };
 
 $('clear-settings').onclick = () => {
-  state.apiKey = ''; localStorage.removeItem('hackerai_key');
-  apiKeyInput.value = ''; updateStatus(false);
+  state.geminiKey = state.openaiKey = state.deepseekKey = state.tgToken = '';
+  ['hackerai_key','hackerai_openai','hackerai_deepseek','hackerai_tg'].forEach(k => localStorage.removeItem(k));
+  $('api-key').value = $('openai-key').value = $('deepseek-key').value = $('tg-token').value = '';
+  updateStatus(false);
   keyStatus.textContent = 'پاک شد'; keyStatus.className = 'key-status';
-  showToast('کلید حذف شد');
+  showToast('کلیدها حذف شدند');
 };
 
 function updateStatus(on) {
-  state.isOnline = on && !!state.apiKey;
+  state.isOnline = on && !!currentKey();
   statusDot.classList.toggle('online', state.isOnline);
-  statusText.textContent = state.isOnline ? 'متصل' : 'آفلاین';
+  statusText.textContent = state.isOnline ? ('متصل · ' + state.provider) : 'آفلاین';
   userInput.disabled = sendBtn.disabled = !state.isOnline;
-  userInput.placeholder = state.isOnline ? 'دستور خود را بنویس...' : 'اول کلید را وصل کن';
+  userInput.placeholder = state.isOnline ? 'دستور خود را بنویس...' : 'اول کلید را در تنظیمات وصل کن';
 }
-updateStatus(!!state.apiKey);
+updateStatus(!!currentKey());
 
 // ===== Modes =====
 const modes = { image: $('btn-image'), music: $('btn-music'), code: $('btn-code') };
@@ -103,12 +184,12 @@ function setMode(m) {
   if (m !== 'chat' && modes[m]) modes[m].classList.add('active');
   const ph = {
     chat: 'دستور خود را بنویس...',
-    image: 'توضیح عکس را بنویس (مثال: گربه فضانورد روی ماه)...',
+    image: 'توضیح عکس (کلید پولی Gemini)...',
     music: 'موضوع یا سبک آهنگ...',
     code: 'سوال یا کد برنامه‌نویسی...'
   };
   userInput.placeholder = ph[m] || ph.chat;
-  showToast(m === 'chat' ? 'چت عادی' : m === 'image' ? 'حالت ساخت عکس واقعی' : m === 'music' ? 'حالت آهنگ' : 'حالت کد');
+  showToast(m === 'image' ? 'حالت عکس' : m === 'music' ? 'حالت آهنگ' : m === 'code' ? 'حالت کد' : 'چت');
 }
 modes.image.onclick = () => setMode(state.mode === 'image' ? 'chat' : 'image');
 modes.music.onclick = () => setMode(state.mode === 'music' ? 'chat' : 'music');
@@ -132,7 +213,7 @@ function startListen() {
   if (!recognition) return showToast('مرورگر پشتیبانی نمی‌کند');
   if (!state.isOnline) return showToast('اول کلید را وصل کن');
   isListening = true; btnVoice.classList.add('listening');
-  btnVoice.textContent = '🔴 گوش می‌دهد...'; recognition.start(); showToast('صحبت کن');
+  btnVoice.textContent = '🔴 گوش می‌دهد...'; recognition.start();
 }
 function stopListen() {
   isListening = false; btnVoice.classList.remove('listening');
@@ -140,9 +221,9 @@ function stopListen() {
 }
 btnVoice.onclick = () => isListening ? stopListen() : startListen();
 
-// ===== Chat =====
+// ===== Chat UI =====
 function renderHistory() {
-  messagesEl.innerHTML = `<div class="msg system"><div class="bubble">SYSTEM // از دکمه‌های بالا برای عکس واقعی، آهنگ، کد و صدا استفاده کن.</div></div>`;
+  messagesEl.innerHTML = `<div class="msg system"><div class="bubble">SYSTEM // Gemini · ChatGPT · DeepSeek — کلید را در تنظیمات وارد کن.</div></div>`;
   state.history.forEach(m => {
     if (m.type === 'image') appendImageMsg(m.content, false);
     else appendMsg(m.role, m.content, false);
@@ -160,12 +241,11 @@ function appendMsg(role, content, save = true) {
     if (state.history.length > 20) state.history = state.history.slice(-20);
     localStorage.setItem('hackerai_history', JSON.stringify(state.history));
   }
-  return div;
 }
 function appendImageMsg(dataUrl, save = true) {
   const div = document.createElement('div');
   div.className = 'msg bot';
-  div.innerHTML = `<div class="msg-role">HACKERAI</div><div class="bubble"><img src="${dataUrl}" style="max-width:100%;border-radius:8px;display:block" alt="generated"></div>`;
+  div.innerHTML = `<div class="msg-role">HACKERAI</div><div class="bubble"><img src="${dataUrl}" style="max-width:100%;border-radius:8px;display:block" alt="img"></div>`;
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   if (save) {
@@ -197,21 +277,21 @@ async function sendMessage() {
 
   try {
     if (state.mode === 'image') {
-      // ===== Real Image Generation =====
-      bubble.textContent = 'در حال ساخت عکس واقعی...';
-      const dataUrl = await generateImage(text);
-      botDiv.remove();
-      appendImageMsg(dataUrl);
-      showToast('عکس ساخته شد');
+      if (state.provider !== 'gemini') {
+        bubble.textContent = '✗ ساخت عکس فعلاً فقط با کلید پولی Gemini';
+      } else {
+        bubble.textContent = 'در حال ساخت عکس...';
+        const dataUrl = await generateImage(text);
+        botDiv.remove();
+        appendImageMsg(dataUrl);
+        showToast('عکس ساخته شد');
+      }
     } else {
-      // Text modes (chat / music / code)
       let prompt = text;
-      if (state.mode === 'music')
-        prompt = `شعر کامل فارسی با ورس و کورس + سبک پیشنهادی.\nدرخواست: ${text}`;
-      else if (state.mode === 'code')
-        prompt = `کد تمیز و کوتاه با توضیح:\n${text}`;
+      if (state.mode === 'music') prompt = `شعر کامل فارسی با ورس و کورس + سبک.\nدرخواست: ${text}`;
+      else if (state.mode === 'code') prompt = `کد تمیز و کوتاه با توضیح:\n${text}`;
 
-      const fullText = await callGeminiStream(prompt, bubble);
+      const fullText = await callAI(prompt, bubble);
       state.history.push({ role: 'bot', content: fullText });
       if (state.history.length > 20) state.history = state.history.slice(-20);
       localStorage.setItem('hackerai_history', JSON.stringify(state.history));
@@ -224,8 +304,8 @@ async function sendMessage() {
     }
   } catch (err) {
     bubble.textContent = '✗ ' + (err.message || 'خطا');
-    if (/API key|403|401|quota|billing|permission|not available|image/i.test(err.message || '')) {
-      showToast('کلید باید پولی باشد یا مدل عکس پشتیبانی نمی‌شود');
+    if (/API key|401|403|quota|billing|invalid/i.test(err.message || '')) {
+      showToast('کلید نامعتبر یا محدودیت');
     }
   }
   sendBtn.disabled = !state.isOnline;
@@ -236,73 +316,126 @@ userInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
-// ===== Real Image Generation (Paid keys) =====
-async function generateImage(prompt) {
-  // Models that support native image generation (need billing)
-  const imageModels = [
-    'gemini-3.1-flash-image',
-    'gemini-3.1-flash-lite-image',
-    'gemini-3-pro-image',
-    'gemini-2.5-flash-image'
-  ];
-
-  let lastError = null;
-
-  for (const model of imageModels) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${state.apiKey}`;
-
-      const body = {
-        contents: [{
-          role: 'user',
-          parts: [{ text: `Generate an image: ${prompt}` }]
-        }],
-        generationConfig: {
-          responseModalities: ['TEXT', 'IMAGE'],
-          // some models use imageConfig
-        }
-      };
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        lastError = data.error?.message || `HTTP ${res.status}`;
-        continue;
-      }
-
-      // Look for inline image data
-      const parts = data.candidates?.[0]?.content?.parts || [];
-      for (const part of parts) {
-        if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
-          const b64 = part.inlineData.data;
-          const mime = part.inlineData.mimeType || 'image/png';
-          return `data:${mime};base64,${b64}`;
-        }
-        // some responses put image in different structure
-        if (part.inline_data && part.inline_data.mime_type?.startsWith('image/')) {
-          return `data:${part.inline_data.mime_type};base64,${part.inline_data.data}`;
-        }
-      }
-
-      lastError = 'تصویری در پاسخ نبود';
-    } catch (e) {
-      lastError = e.message;
-    }
-  }
-
-  throw new Error(lastError || 'ساخت عکس ممکن نشد. کلید پولی با دسترسی تصویر لازم است.');
+// ===== Multi-provider AI =====
+async function callAI(userText, bubbleEl) {
+  if (state.provider === 'openai') return callOpenAI(userText, bubbleEl);
+  if (state.provider === 'deepseek') return callDeepSeek(userText, bubbleEl);
+  return callGeminiStream(userText, bubbleEl);
 }
 
-// ===== Streaming text =====
-async function callGeminiStream(userText, bubbleEl) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:streamGenerateContent?alt=sse&key=${state.apiKey}`;
+async function callOpenAI(userText, bubbleEl) {
+  const messages = [{ role: 'system', content: state.systemPrompt }];
+  state.history.filter(h => !h.type).slice(-6).forEach(h => {
+    messages.push({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content });
+  });
+  messages.push({ role: 'user', content: userText });
 
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + state.openaiKey
+    },
+    body: JSON.stringify({
+      model: state.model,
+      messages,
+      max_tokens: 1024,
+      stream: true
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'OpenAI HTTP ' + res.status);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '', buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (payload === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(payload);
+        const chunk = parsed.choices?.[0]?.delta?.content || '';
+        if (chunk) {
+          full += chunk;
+          bubbleEl.textContent = full + '▌';
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+      } catch {}
+    }
+  }
+  bubbleEl.textContent = full || 'پاسخی نیامد';
+  return full;
+}
+
+async function callDeepSeek(userText, bubbleEl) {
+  // DeepSeek uses OpenAI-compatible API
+  const messages = [{ role: 'system', content: state.systemPrompt }];
+  state.history.filter(h => !h.type).slice(-6).forEach(h => {
+    messages.push({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content });
+  });
+  messages.push({ role: 'user', content: userText });
+
+  const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + state.deepseekKey
+    },
+    body: JSON.stringify({
+      model: state.model,
+      messages,
+      max_tokens: 1024,
+      stream: true
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'DeepSeek HTTP ' + res.status);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '', buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (payload === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(payload);
+        const chunk = parsed.choices?.[0]?.delta?.content || '';
+        if (chunk) {
+          full += chunk;
+          bubbleEl.textContent = full + '▌';
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+      } catch {}
+    }
+  }
+  bubbleEl.textContent = full || 'پاسخی نیامد';
+  return full;
+}
+
+async function callGeminiStream(userText, bubbleEl) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:streamGenerateContent?alt=sse&key=${state.geminiKey}`;
   const contents = [];
   state.history.filter(h => !h.type).slice(-4).forEach(h => {
     contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] });
@@ -321,13 +454,12 @@ async function callGeminiStream(userText, bubbleEl) {
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `HTTP ${res.status}`);
+    throw new Error(errData.error?.message || 'Gemini HTTP ' + res.status);
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  let full = '';
-  let buffer = '';
+  let full = '', buffer = '';
 
   while (true) {
     const { done, value } = await reader.read();
@@ -350,9 +482,39 @@ async function callGeminiStream(userText, bubbleEl) {
       } catch {}
     }
   }
-
   bubbleEl.textContent = full || 'پاسخی نیامد';
   return full;
+}
+
+async function generateImage(prompt) {
+  const imageModels = ['gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image', 'gemini-3-pro-image'];
+  let lastError = null;
+  for (const model of imageModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${state.geminiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: 'Generate an image: ' + prompt }] }],
+          generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) { lastError = data.error?.message || res.status; continue; }
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData?.mimeType?.startsWith('image/')) {
+          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        }
+        if (part.inline_data?.mime_type?.startsWith('image/')) {
+          return `data:${part.inline_data.mime_type};base64,${part.inline_data.data}`;
+        }
+      }
+      lastError = 'تصویر در پاسخ نبود';
+    } catch (e) { lastError = e.message; }
+  }
+  throw new Error(lastError || 'ساخت عکس ممکن نشد (کلید پولی لازم است)');
 }
 
 function showToast(msg) {
