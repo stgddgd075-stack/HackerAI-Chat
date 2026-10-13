@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>HACKERAI — Neural Interface</title>
-  <meta name="description" content="چت هوش مصنوعی سایبرپانک. کلید API خودت را وارد کن. ساخته امیرحسین پهلوان">
+  <meta name="description" content="چت هوش مصنوعی با Gemini، ChatGPT و DeepSeek. ساخته امیرحسین پهلوان">
   <meta name="theme-color" content="#05080f">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Share+Tech+Mono&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -21,7 +21,7 @@
         <div class="brand-hex">⬡</div>
         <div>
           <div class="brand-name">HACKER<span>AI</span></div>
-          <div class="brand-tag">NEURAL LINK v2</div>
+          <div class="brand-tag">NEURAL LINK v3</div>
         </div>
       </div>
       <nav class="nav">
@@ -54,7 +54,7 @@
 
         <div class="messages" id="messages">
           <div class="msg system">
-            <div class="bubble">SYSTEM // لینک آماده است. کلید را در تنظیمات وارد کنید.</div>
+            <div class="bubble">SYSTEM // کلید Gemini / ChatGPT / DeepSeek را در تنظیمات وارد کنید.</div>
           </div>
         </div>
 
@@ -71,31 +71,59 @@
     </section>
 
     <section id="section-settings" class="view">
-      <div class="glass-card">
+      <div class="glass-card settings-scroll">
         <h2>تنظیمات سیستم</h2>
-        <p class="hint">کلید فقط روی دستگاه شما ذخیره می‌شود</p>
+        <p class="hint">کلیدها فقط روی دستگاه شما ذخیره می‌شوند</p>
 
-        <label>کلید Gemini API</label>
-        <div class="row">
-          <input type="password" id="api-key" placeholder="AIzaSy...">
-          <button type="button" id="toggle-key" class="icon-btn">👁</button>
+        <label>ارائه‌دهنده (Provider)</label>
+        <select id="provider-select">
+          <option value="gemini">Google Gemini</option>
+          <option value="openai">OpenAI (ChatGPT)</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+
+        <div id="key-gemini-group">
+          <label>کلید Gemini API</label>
+          <div class="row">
+            <input type="password" id="api-key" placeholder="AIzaSy...">
+            <button type="button" class="icon-btn toggle-vis" data-target="api-key">👁</button>
+          </div>
+        </div>
+
+        <div id="key-openai-group" style="display:none">
+          <label>کلید OpenAI (ChatGPT)</label>
+          <div class="row">
+            <input type="password" id="openai-key" placeholder="sk-...">
+            <button type="button" class="icon-btn toggle-vis" data-target="openai-key">👁</button>
+          </div>
+        </div>
+
+        <div id="key-deepseek-group" style="display:none">
+          <label>کلید DeepSeek</label>
+          <div class="row">
+            <input type="password" id="deepseek-key" placeholder="sk-...">
+            <button type="button" class="icon-btn toggle-vis" data-target="deepseek-key">👁</button>
+          </div>
         </div>
 
         <label>مدل</label>
-        <select id="model-select">
-          <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash</option>
-          <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
-          <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
-          <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-          <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-        </select>
+        <select id="model-select"></select>
 
-        <label>دستور سیستم</label>
-        <textarea id="system-prompt" rows="3" placeholder="تو یک دستیار هوشمند هستی..."></textarea>
+        <label>دستور سیستم (اختیاری)</label>
+        <textarea id="system-prompt" rows="2" placeholder="تو یک دستیار هوشمند هستی..."></textarea>
+
+        <hr class="sep">
+
+        <label>توکن ربات تلگرام (اختیاری)</label>
+        <div class="row">
+          <input type="password" id="tg-token" placeholder="123456:ABC-DEF...">
+          <button type="button" class="icon-btn toggle-vis" data-target="tg-token">👁</button>
+        </div>
+        <p class="hint small">برای استفاده در تلگرام، ربات جدا باید روی سرور (مثل Render) دیپلوی شود. راهنما در گیت‌هاب است.</p>
 
         <div class="btn-row">
           <button id="save-settings" class="btn-primary">ذخیره و اتصال</button>
-          <button id="clear-settings" class="btn-ghost">پاک کردن کلید</button>
+          <button id="clear-settings" class="btn-ghost">پاک کردن کلیدها</button>
         </div>
         <div id="key-status" class="key-status"></div>
       </div>
@@ -105,18 +133,18 @@
       <div class="glass-card about-card">
         <div class="big-hex">⬡</div>
         <h1>HACKERAI</h1>
-        <p class="tagline">Neural Interface for the Free Mind</p>
+        <p class="tagline">Neural Interface · Multi-Provider</p>
         <div class="creator-block">
           <div class="c-label">CREATED BY</div>
           <div class="c-name">امیرحسین پهلوان</div>
           <div class="c-id">@Amir13900001</div>
         </div>
         <ul class="feats">
-          <li>کلید API توسط کاربر</li>
-          <li>پرامپت عکس و متن آهنگ</li>
-          <li>حالت کدنویسی</li>
-          <li>صحبت صوتی با میکروفن</li>
-          <li>کاملاً متن‌باز</li>
+          <li>پشتیبانی Gemini + ChatGPT + DeepSeek</li>
+          <li>مدل‌های جدید GPT-5.6 و GPT-6</li>
+          <li>ساخت عکس (کلید پولی Gemini)</li>
+          <li>کد، آهنگ، صدا</li>
+          <li>ربات تلگرام (دیپلوی جدا)</li>
         </ul>
       </div>
     </section>
