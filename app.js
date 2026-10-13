@@ -1,83 +1,70 @@
-// Matrix Background
+// ===== Matrix =====
 const canvas = document.getElementById('matrix');
 const ctx = canvas.getContext('2d');
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF<>[]{}#$%&';
-const fontSize = 14;
-let columns, drops;
-function initMatrix() {
-  columns = Math.floor(canvas.width / fontSize);
-  drops = Array(columns).fill(1);
-}
-function drawMatrix() {
-  ctx.fillStyle = 'rgba(10, 14, 20, 0.05)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#00ff9f';
-  ctx.font = fontSize + 'px monospace';
+function resize() { canvas.width = innerWidth; canvas.height = innerHeight; }
+resize(); addEventListener('resize', resize);
+const chars = 'アイウエオカキクケコサシスセソタチツテト0123456789ABCDEF<>[]{}#$%&';
+const fs = 14; let cols, drops;
+function init() { cols = Math.floor(canvas.width / fs); drops = Array(cols).fill(1); }
+function draw() {
+  ctx.fillStyle = 'rgba(5,8,15,0.05)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#00ff9f'; ctx.font = fs + 'px monospace';
   for (let i = 0; i < drops.length; i++) {
-    const text = chars[Math.floor(Math.random() * chars.length)];
-    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+    ctx.fillText(chars[Math.floor(Math.random()*chars.length)], i*fs, drops[i]*fs);
+    if (drops[i]*fs > canvas.height && Math.random() > 0.975) drops[i] = 0;
     drops[i]++;
   }
 }
-initMatrix();
-setInterval(drawMatrix, 50);
-window.addEventListener('resize', initMatrix);
+init(); setInterval(draw, 50); addEventListener('resize', init);
 
-// State
+// ===== State =====
 const state = {
   apiKey: localStorage.getItem('hackerai_key') || '',
   model: localStorage.getItem('hackerai_model') || 'gemini-3.8-flash',
   systemPrompt: localStorage.getItem('hackerai_system') || 'تو یک دستیار هوشمند و مفید هستی. پاسخ‌ها را واضح و مرتب بنویس.',
   history: JSON.parse(localStorage.getItem('hackerai_history') || '[]'),
   isOnline: false,
-  mode: 'chat' // chat | image | music | code
+  mode: 'chat',
+  lastWasVoice: false
 };
 
-const messagesEl = document.getElementById('messages');
-const userInput = document.getElementById('user-input');
-const sendBtn = document.getElementById('send-btn');
-const statusDot = document.getElementById('status-dot');
-const statusText = document.getElementById('status-text');
-const apiKeyInput = document.getElementById('api-key');
-const modelSelect = document.getElementById('model-select');
-const systemPromptEl = document.getElementById('system-prompt');
-const keyStatus = document.getElementById('key-status');
-const toastEl = document.getElementById('toast');
-const btnVoice = document.getElementById('btn-voice');
+const $ = id => document.getElementById(id);
+const messagesEl = $('messages');
+const userInput = $('user-input');
+const sendBtn = $('send-btn');
+const statusDot = $('status-dot');
+const statusText = $('status-text');
+const apiKeyInput = $('api-key');
+const modelSelect = $('model-select');
+const systemPromptEl = $('system-prompt');
+const keyStatus = $('key-status');
+const toastEl = $('toast');
+const btnVoice = $('btn-voice');
 
-// Navigation
+// ===== Nav =====
 document.querySelectorAll('.nav-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.onclick = () => {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     btn.classList.add('active');
-    document.getElementById('section-' + btn.dataset.section).classList.add('active');
-  });
+    $('section-' + btn.dataset.section).classList.add('active');
+  };
 });
-document.getElementById('btn-chat').classList.add('active');
 
-// Settings
+// ===== Settings =====
 apiKeyInput.value = state.apiKey;
 modelSelect.value = state.model;
 systemPromptEl.value = state.systemPrompt;
 
-document.getElementById('toggle-key').addEventListener('click', () => {
+$('toggle-key').onclick = () => {
   apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
-});
+};
 
-document.getElementById('save-settings').addEventListener('click', () => {
+$('save-settings').onclick = () => {
   const key = apiKeyInput.value.trim();
   if (!key) {
-    showToast('لطفاً کلید API را وارد کنید');
-    keyStatus.textContent = '✗ کلید خالی است';
-    keyStatus.className = 'key-status error';
+    showToast('کلید را وارد کن');
+    keyStatus.textContent = '✗ خالی است'; keyStatus.className = 'key-status error';
     return;
   }
   state.apiKey = key;
@@ -86,133 +73,83 @@ document.getElementById('save-settings').addEventListener('click', () => {
   localStorage.setItem('hackerai_key', state.apiKey);
   localStorage.setItem('hackerai_model', state.model);
   localStorage.setItem('hackerai_system', state.systemPrompt);
-  updateConnectionStatus(true);
-  keyStatus.textContent = '✓ کلید ذخیره و متصل شد';
-  keyStatus.className = 'key-status success';
-  showToast('تنظیمات ذخیره شد');
-  document.getElementById('btn-chat').click();
-});
-
-document.getElementById('clear-settings').addEventListener('click', () => {
-  state.apiKey = '';
-  localStorage.removeItem('hackerai_key');
-  apiKeyInput.value = '';
-  updateConnectionStatus(false);
-  keyStatus.textContent = 'کلید پاک شد';
-  keyStatus.className = 'key-status';
-  showToast('کلید حذف شد');
-});
-
-function updateConnectionStatus(online) {
-  state.isOnline = online && !!state.apiKey;
-  statusDot.classList.toggle('online', state.isOnline);
-  statusText.textContent = state.isOnline ? 'متصل' : 'آفلاین';
-  userInput.disabled = !state.isOnline;
-  sendBtn.disabled = !state.isOnline;
-  userInput.placeholder = state.isOnline ? 'پیام خود را بنویسید...' : 'ابتدا کلید API را در تنظیمات وارد کنید';
-}
-updateConnectionStatus(!!state.apiKey);
-
-// Toolbar modes
-const toolBtns = {
-  image: document.getElementById('btn-image'),
-  music: document.getElementById('btn-music'),
-  code: document.getElementById('btn-code'),
-  voice: btnVoice
+  updateStatus(true);
+  keyStatus.textContent = '✓ متصل شد'; keyStatus.className = 'key-status success';
+  showToast('ذخیره شد');
+  document.querySelector('[data-section="chat"]').click();
 };
 
-function setMode(mode) {
-  state.mode = mode;
-  Object.values(toolBtns).forEach(b => b.classList.remove('active'));
-  if (mode === 'image') toolBtns.image.classList.add('active');
-  if (mode === 'music') toolBtns.music.classList.add('active');
-  if (mode === 'code') toolBtns.code.classList.add('active');
-  if (mode === 'chat') { /* none active */ }
-  const placeholders = {
-    chat: 'پیام خود را بنویسید...',
-    image: 'توضیح عکس را بنویس (مثال: گربه فضانورد روی ماه)...',
-    music: 'موضوع یا سبک آهنگ را بنویس...',
-    code: 'سوال یا کد برنامه‌نویسی را بنویس...'
-  };
-  userInput.placeholder = placeholders[mode] || placeholders.chat;
-  showToast(mode === 'chat' ? 'حالت چت عادی' : mode === 'image' ? 'حالت ساخت پرامپت عکس' : mode === 'music' ? 'حالت ساخت متن آهنگ' : 'حالت کدنویسی');
+$('clear-settings').onclick = () => {
+  state.apiKey = ''; localStorage.removeItem('hackerai_key');
+  apiKeyInput.value = ''; updateStatus(false);
+  keyStatus.textContent = 'پاک شد'; keyStatus.className = 'key-status';
+  showToast('کلید حذف شد');
+};
+
+function updateStatus(on) {
+  state.isOnline = on && !!state.apiKey;
+  statusDot.classList.toggle('online', state.isOnline);
+  statusText.textContent = state.isOnline ? 'متصل' : 'آفلاین';
+  userInput.disabled = sendBtn.disabled = !state.isOnline;
+  userInput.placeholder = state.isOnline ? 'دستور خود را بنویس...' : 'اول کلید را وصل کن';
 }
+updateStatus(!!state.apiKey);
 
-toolBtns.image.onclick = () => setMode(state.mode === 'image' ? 'chat' : 'image');
-toolBtns.music.onclick = () => setMode(state.mode === 'music' ? 'chat' : 'music');
-toolBtns.code.onclick = () => setMode(state.mode === 'code' ? 'chat' : 'code');
+// ===== Modes =====
+const modes = { image: $('btn-image'), music: $('btn-music'), code: $('btn-code') };
+function setMode(m) {
+  state.mode = m;
+  Object.values(modes).forEach(b => b.classList.remove('active'));
+  if (m !== 'chat' && modes[m]) modes[m].classList.add('active');
+  const ph = {
+    chat: 'دستور خود را بنویس...',
+    image: 'توضیح عکس (مثال: گربه فضانورد)...',
+    music: 'موضوع یا سبک آهنگ...',
+    code: 'سوال یا کد برنامه‌نویسی...'
+  };
+  userInput.placeholder = ph[m] || ph.chat;
+  showToast(m === 'chat' ? 'چت عادی' : m === 'image' ? 'حالت عکس' : m === 'music' ? 'حالت آهنگ' : 'حالت کد');
+}
+modes.image.onclick = () => setMode(state.mode === 'image' ? 'chat' : 'image');
+modes.music.onclick = () => setMode(state.mode === 'music' ? 'chat' : 'music');
+modes.code.onclick = () => setMode(state.mode === 'code' ? 'chat' : 'code');
 
-// Voice (Web Speech API)
-let recognition = null;
-let isListening = false;
-
+// ===== Voice =====
+let recognition = null, isListening = false;
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
-  recognition.lang = 'fa-IR';
-  recognition.continuous = false;
-  recognition.interimResults = false;
-
-  recognition.onresult = (e) => {
-    const text = e.results[0][0].transcript;
-    userInput.value = text;
-    stopListening();
-    sendMessage();
+  recognition.lang = 'fa-IR'; recognition.continuous = false; recognition.interimResults = false;
+  recognition.onresult = e => {
+    state.lastWasVoice = true;
+    userInput.value = e.results[0][0].transcript;
+    stopListen(); sendMessage();
   };
-  recognition.onerror = () => {
-    stopListening();
-    showToast('خطا در تشخیص صدا');
-  };
-  recognition.onend = () => stopListening();
+  recognition.onerror = () => { stopListen(); showToast('خطای میکروفن'); };
+  recognition.onend = () => stopListen();
 }
-
-function startListening() {
-  if (!recognition) {
-    showToast('مرورگر شما از میکروفن پشتیبانی نمی‌کند');
-    return;
-  }
-  if (!state.isOnline) {
-    showToast('اول کلید API را وصل کن');
-    return;
-  }
-  isListening = true;
-  btnVoice.classList.add('listening');
-  btnVoice.textContent = '🔴 در حال گوش دادن...';
-  recognition.start();
-  showToast('صحبت کنید...');
+function startListen() {
+  if (!recognition) return showToast('مرورگر پشتیبانی نمی‌کند');
+  if (!state.isOnline) return showToast('اول کلید را وصل کن');
+  isListening = true; btnVoice.classList.add('listening');
+  btnVoice.textContent = '🔴 گوش می‌دهد...'; recognition.start(); showToast('صحبت کن');
 }
-
-function stopListening() {
-  isListening = false;
-  btnVoice.classList.remove('listening');
-  btnVoice.textContent = '🎤 صدا';
-  try { recognition?.stop(); } catch (_) {}
+function stopListen() {
+  isListening = false; btnVoice.classList.remove('listening');
+  btnVoice.textContent = '🎤 صدا'; try { recognition?.stop(); } catch {}
 }
+btnVoice.onclick = () => isListening ? stopListen() : startListen();
 
-btnVoice.onclick = () => {
-  if (isListening) stopListening();
-  else startListening();
-};
-
-// Chat core
+// ===== Chat =====
 function renderHistory() {
-  messagesEl.innerHTML = `
-    <div class="message system">
-      <div class="msg-content">
-        <span class="prefix">></span>
-        سیستم آماده است. از دکمه‌های بالا برای عکس، آهنگ، کد و صدا استفاده کنید.
-      </div>
-    </div>`;
-  state.history.forEach(msg => appendMessage(msg.role, msg.content, false));
+  messagesEl.innerHTML = `<div class="msg system"><div class="bubble">SYSTEM // از دکمه‌های بالا برای عکس، آهنگ، کد و صدا استفاده کن.</div></div>`;
+  state.history.forEach(m => appendMsg(m.role, m.content, false));
 }
-
-function appendMessage(role, content, save = true) {
+function appendMsg(role, content, save = true) {
   const div = document.createElement('div');
-  div.className = 'message ' + (role === 'user' ? 'user' : role === 'system' ? 'system' : 'bot');
-  const roleLabel = role === 'user' ? 'شما' : role === 'bot' ? 'HackerAI' : '';
-  div.innerHTML = `
-    ${roleLabel ? `<div class="msg-role">${roleLabel}</div>` : ''}
-    <div class="msg-content">${escapeHtml(content)}</div>`;
+  div.className = 'msg ' + (role === 'user' ? 'user' : role === 'system' ? 'system' : 'bot');
+  const label = role === 'user' ? 'شما' : role === 'bot' ? 'HACKERAI' : '';
+  div.innerHTML = `${label ? `<div class="msg-role">${label}</div>` : ''}<div class="bubble">${esc(content)}</div>`;
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   if (save && (role === 'user' || role === 'bot')) {
@@ -221,125 +158,87 @@ function appendMessage(role, content, save = true) {
     localStorage.setItem('hackerai_history', JSON.stringify(state.history));
   }
 }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-function escapeHtml(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
-
-document.getElementById('clear-chat').onclick = () => {
-  state.history = [];
-  localStorage.removeItem('hackerai_history');
-  renderHistory();
-  showToast('چت پاک شد');
+$('clear-chat').onclick = () => {
+  state.history = []; localStorage.removeItem('hackerai_history');
+  renderHistory(); showToast('پاک شد');
 };
 
 async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || !state.isOnline) return;
-  userInput.value = '';
-  appendMessage('user', text);
+  userInput.value = ''; appendMsg('user', text);
 
   const typing = document.createElement('div');
-  typing.className = 'message bot';
-  typing.id = 'typing';
-  typing.innerHTML = `<div class="msg-role">HackerAI</div><div class="msg-content">در حال فکر کردن...</div>`;
-  messagesEl.appendChild(typing);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  typing.className = 'msg bot'; typing.id = 'typing';
+  typing.innerHTML = `<div class="msg-role">HACKERAI</div><div class="bubble">در حال پردازش...</div>`;
+  messagesEl.appendChild(typing); messagesEl.scrollTop = messagesEl.scrollHeight;
 
   try {
     let prompt = text;
-    if (state.mode === 'image') {
-      prompt = `کاربر می‌خواهد عکس بسازد. چون کلید رایگان Gemini تولید واقعی عکس ندارد، یک پرامپت خیلی حرفه‌ای و دقیق به زبان انگلیسی برای ابزارهایی مثل Midjourney یا Flux یا Nano Banana بنویس. فقط پرامپت انگلیسی را بده و بعد یک ترجمه کوتاه فارسی.
+    if (state.mode === 'image')
+      prompt = `کاربر می‌خواهد عکس بسازد. چون کلید رایگان Gemini تولید واقعی عکس ندارد، یک پرامپت خیلی حرفه‌ای انگلیسی برای Midjourney/Flux بنویس و بعد ترجمه کوتاه فارسی.
 
-موضوع کاربر: ${text}`;
-    } else if (state.mode === 'music') {
-      prompt = `کاربر می‌خواهد متن آهنگ داشته باشد. یک شعر کامل و زیبا (ترجیحاً فارسی) با ساختار ورس و کورس بنویس و سبک پیشنهادی هم بگو.
+موضوع: ${text}`;
+    else if (state.mode === 'music')
+      prompt = `یک شعر کامل و زیبا (ترجیحاً فارسی) با ورس و کورس بنویس و سبک پیشنهادی بگو.
 
 درخواست: ${text}`;
-    } else if (state.mode === 'code') {
-      prompt = `تو یک برنامه‌نویس حرفه‌ای هستی. به این درخواست کدنویسی کمک کن. کد تمیز، توضیح‌دار و قابل اجرا بنویس:
+    else if (state.mode === 'code')
+      prompt = `تو برنامه‌نویس حرفه‌ای هستی. کد تمیز و توضیح‌دار بنویس:
 
 ${text}`;
-    }
 
     const reply = await callGemini(prompt);
-    document.getElementById('typing')?.remove();
-    appendMessage('bot', reply);
+    $('typing')?.remove(); appendMsg('bot', reply);
 
-    // Speak the reply if voice was used recently
     if (window.speechSynthesis && state.lastWasVoice) {
-      const utter = new SpeechSynthesisUtterance(reply.slice(0, 300));
-      utter.lang = 'fa-IR';
-      window.speechSynthesis.speak(utter);
+      const u = new SpeechSynthesisUtterance(reply.slice(0, 280));
+      u.lang = 'fa-IR'; speechSynthesis.speak(u);
       state.lastWasVoice = false;
     }
   } catch (err) {
-    document.getElementById('typing')?.remove();
-    const msg = err.message || 'خطای ناشناخته';
-    appendMessage('bot', '✗ خطا: ' + msg);
-    if (msg.includes('API key') || msg.includes('403') || msg.includes('401')) {
-      updateConnectionStatus(false);
-      showToast('کلید نامعتبر است');
+    $('typing')?.remove();
+    appendMsg('bot', '✗ ' + (err.message || 'خطا'));
+    if (/API key|403|401/i.test(err.message || '')) {
+      updateStatus(false); showToast('کلید نامعتبر');
     }
   }
 }
 
 sendBtn.onclick = sendMessage;
 userInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
-
-// Override voice result to mark as voice
-const originalOnResult = recognition?.onresult;
-if (recognition) {
-  recognition.onresult = (e) => {
-    state.lastWasVoice = true;
-    const text = e.results[0][0].transcript;
-    userInput.value = text;
-    stopListening();
-    sendMessage();
-  };
-}
 
 async function callGemini(userText) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:generateContent?key=${state.apiKey}`;
   const contents = [];
-  const recent = state.history.slice(-8);
-  for (const h of recent) {
-    contents.push({
-      role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.content }]
-    });
-  }
+  state.history.slice(-8).forEach(h => {
+    contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] });
+  });
   contents.push({ role: 'user', parts: [{ text: userText }] });
-
-  const body = {
-    contents,
-    systemInstruction: { parts: [{ text: state.systemPrompt }] },
-    generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
-  };
 
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify({
+      contents,
+      systemInstruction: { parts: [{ text: state.systemPrompt }] },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+    })
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('پاسخی دریافت نشد');
+  if (!text) throw new Error('پاسخی نیامد');
   return text;
 }
 
 function showToast(msg) {
-  toastEl.textContent = msg;
-  toastEl.classList.add('show');
-  setTimeout(() => toastEl.classList.remove('show'), 2800);
+  toastEl.textContent = msg; toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), 2600);
 }
 
 renderHistory();
