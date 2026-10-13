@@ -1,24 +1,19 @@
 // Matrix Background
 const canvas = document.getElementById('matrix');
 const ctx = canvas.getContext('2d');
-let matrixInterval;
-
 function resizeCanvas() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
 }
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
-
 const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF<>[]{}#$%&';
 const fontSize = 14;
 let columns, drops;
-
 function initMatrix() {
   columns = Math.floor(canvas.width / fontSize);
   drops = Array(columns).fill(1);
 }
-
 function drawMatrix() {
   ctx.fillStyle = 'rgba(10, 14, 20, 0.05)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -31,10 +26,9 @@ function drawMatrix() {
     drops[i]++;
   }
 }
-
 initMatrix();
-matrixInterval = setInterval(drawMatrix, 50);
-window.addEventListener('resize', () => { initMatrix(); });
+setInterval(drawMatrix, 50);
+window.addEventListener('resize', initMatrix);
 
 // State
 const state = {
@@ -42,10 +36,10 @@ const state = {
   model: localStorage.getItem('hackerai_model') || 'gemini-3.8-flash',
   systemPrompt: localStorage.getItem('hackerai_system') || 'تو یک دستیار هوشمند و مفید هستی. پاسخ‌ها را واضح و مرتب بنویس.',
   history: JSON.parse(localStorage.getItem('hackerai_history') || '[]'),
-  isOnline: false
+  isOnline: false,
+  mode: 'chat' // chat | image | music | code
 };
 
-// DOM
 const messagesEl = document.getElementById('messages');
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
@@ -56,6 +50,7 @@ const modelSelect = document.getElementById('model-select');
 const systemPromptEl = document.getElementById('system-prompt');
 const keyStatus = document.getElementById('key-status');
 const toastEl = document.getElementById('toast');
+const btnVoice = document.getElementById('btn-voice');
 
 // Navigation
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -114,25 +109,100 @@ function updateConnectionStatus(online) {
   statusText.textContent = state.isOnline ? 'متصل' : 'آفلاین';
   userInput.disabled = !state.isOnline;
   sendBtn.disabled = !state.isOnline;
-  if (state.isOnline) {
-    userInput.placeholder = 'پیام خود را بنویسید...';
-  } else {
-    userInput.placeholder = 'ابتدا کلید API را در تنظیمات وارد کنید';
-  }
+  userInput.placeholder = state.isOnline ? 'پیام خود را بنویسید...' : 'ابتدا کلید API را در تنظیمات وارد کنید';
 }
-
 updateConnectionStatus(!!state.apiKey);
 
-// Chat
+// Toolbar modes
+const toolBtns = {
+  image: document.getElementById('btn-image'),
+  music: document.getElementById('btn-music'),
+  code: document.getElementById('btn-code'),
+  voice: btnVoice
+};
+
+function setMode(mode) {
+  state.mode = mode;
+  Object.values(toolBtns).forEach(b => b.classList.remove('active'));
+  if (mode === 'image') toolBtns.image.classList.add('active');
+  if (mode === 'music') toolBtns.music.classList.add('active');
+  if (mode === 'code') toolBtns.code.classList.add('active');
+  if (mode === 'chat') { /* none active */ }
+  const placeholders = {
+    chat: 'پیام خود را بنویسید...',
+    image: 'توضیح عکس را بنویس (مثال: گربه فضانورد روی ماه)...',
+    music: 'موضوع یا سبک آهنگ را بنویس...',
+    code: 'سوال یا کد برنامه‌نویسی را بنویس...'
+  };
+  userInput.placeholder = placeholders[mode] || placeholders.chat;
+  showToast(mode === 'chat' ? 'حالت چت عادی' : mode === 'image' ? 'حالت ساخت پرامپت عکس' : mode === 'music' ? 'حالت ساخت متن آهنگ' : 'حالت کدنویسی');
+}
+
+toolBtns.image.onclick = () => setMode(state.mode === 'image' ? 'chat' : 'image');
+toolBtns.music.onclick = () => setMode(state.mode === 'music' ? 'chat' : 'music');
+toolBtns.code.onclick = () => setMode(state.mode === 'code' ? 'chat' : 'code');
+
+// Voice (Web Speech API)
+let recognition = null;
+let isListening = false;
+
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'fa-IR';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    userInput.value = text;
+    stopListening();
+    sendMessage();
+  };
+  recognition.onerror = () => {
+    stopListening();
+    showToast('خطا در تشخیص صدا');
+  };
+  recognition.onend = () => stopListening();
+}
+
+function startListening() {
+  if (!recognition) {
+    showToast('مرورگر شما از میکروفن پشتیبانی نمی‌کند');
+    return;
+  }
+  if (!state.isOnline) {
+    showToast('اول کلید API را وصل کن');
+    return;
+  }
+  isListening = true;
+  btnVoice.classList.add('listening');
+  btnVoice.textContent = '🔴 در حال گوش دادن...';
+  recognition.start();
+  showToast('صحبت کنید...');
+}
+
+function stopListening() {
+  isListening = false;
+  btnVoice.classList.remove('listening');
+  btnVoice.textContent = '🎤 صدا';
+  try { recognition?.stop(); } catch (_) {}
+}
+
+btnVoice.onclick = () => {
+  if (isListening) stopListening();
+  else startListening();
+};
+
+// Chat core
 function renderHistory() {
   messagesEl.innerHTML = `
     <div class="message system">
       <div class="msg-content">
         <span class="prefix">></span>
-        سیستم آماده است. کلید API را در تنظیمات وارد کنید و شروع به چت کنید.
+        سیستم آماده است. از دکمه‌های بالا برای عکس، آهنگ، کد و صدا استفاده کنید.
       </div>
-    </div>
-  `;
+    </div>`;
   state.history.forEach(msg => appendMessage(msg.role, msg.content, false));
 }
 
@@ -142,8 +212,7 @@ function appendMessage(role, content, save = true) {
   const roleLabel = role === 'user' ? 'شما' : role === 'bot' ? 'HackerAI' : '';
   div.innerHTML = `
     ${roleLabel ? `<div class="msg-role">${roleLabel}</div>` : ''}
-    <div class="msg-content">${escapeHtml(content)}</div>
-  `;
+    <div class="msg-content">${escapeHtml(content)}</div>`;
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   if (save && (role === 'user' || role === 'bot')) {
@@ -159,12 +228,12 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-document.getElementById('clear-chat').addEventListener('click', () => {
+document.getElementById('clear-chat').onclick = () => {
   state.history = [];
   localStorage.removeItem('hackerai_history');
   renderHistory();
   showToast('چت پاک شد');
-});
+};
 
 async function sendMessage() {
   const text = userInput.value.trim();
@@ -180,21 +249,44 @@ async function sendMessage() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
   try {
-    const reply = await callGemini(text);
+    let prompt = text;
+    if (state.mode === 'image') {
+      prompt = `کاربر می‌خواهد عکس بسازد. چون کلید رایگان Gemini تولید واقعی عکس ندارد، یک پرامپت خیلی حرفه‌ای و دقیق به زبان انگلیسی برای ابزارهایی مثل Midjourney یا Flux یا Nano Banana بنویس. فقط پرامپت انگلیسی را بده و بعد یک ترجمه کوتاه فارسی.
+
+موضوع کاربر: ${text}`;
+    } else if (state.mode === 'music') {
+      prompt = `کاربر می‌خواهد متن آهنگ داشته باشد. یک شعر کامل و زیبا (ترجیحاً فارسی) با ساختار ورس و کورس بنویس و سبک پیشنهادی هم بگو.
+
+درخواست: ${text}`;
+    } else if (state.mode === 'code') {
+      prompt = `تو یک برنامه‌نویس حرفه‌ای هستی. به این درخواست کدنویسی کمک کن. کد تمیز، توضیح‌دار و قابل اجرا بنویس:
+
+${text}`;
+    }
+
+    const reply = await callGemini(prompt);
     document.getElementById('typing')?.remove();
     appendMessage('bot', reply);
+
+    // Speak the reply if voice was used recently
+    if (window.speechSynthesis && state.lastWasVoice) {
+      const utter = new SpeechSynthesisUtterance(reply.slice(0, 300));
+      utter.lang = 'fa-IR';
+      window.speechSynthesis.speak(utter);
+      state.lastWasVoice = false;
+    }
   } catch (err) {
     document.getElementById('typing')?.remove();
     const msg = err.message || 'خطای ناشناخته';
     appendMessage('bot', '✗ خطا: ' + msg);
     if (msg.includes('API key') || msg.includes('403') || msg.includes('401')) {
       updateConnectionStatus(false);
-      showToast('کلید نامعتبر است. تنظیمات را بررسی کنید');
+      showToast('کلید نامعتبر است');
     }
   }
 }
 
-sendBtn.addEventListener('click', sendMessage);
+sendBtn.onclick = sendMessage;
 userInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -202,11 +294,22 @@ userInput.addEventListener('keydown', e => {
   }
 });
 
+// Override voice result to mark as voice
+const originalOnResult = recognition?.onresult;
+if (recognition) {
+  recognition.onresult = (e) => {
+    state.lastWasVoice = true;
+    const text = e.results[0][0].transcript;
+    userInput.value = text;
+    stopListening();
+    sendMessage();
+  };
+}
+
 async function callGemini(userText) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:generateContent?key=${state.apiKey}`;
-  
   const contents = [];
-  const recent = state.history.slice(-10);
+  const recent = state.history.slice(-8);
   for (const h of recent) {
     contents.push({
       role: h.role === 'user' ? 'user' : 'model',
@@ -226,12 +329,8 @@ async function callGemini(userText) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-
   const data = await res.json();
-  if (!res.ok) {
-    const errMsg = data.error?.message || `HTTP ${res.status}`;
-    throw new Error(errMsg);
-  }
+  if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('پاسخی دریافت نشد');
   return text;
