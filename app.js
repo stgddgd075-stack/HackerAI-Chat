@@ -39,7 +39,7 @@ window.addEventListener('resize', () => { initMatrix(); });
 // State
 const state = {
   apiKey: localStorage.getItem('hackerai_key') || '',
-  model: localStorage.getItem('hackerai_model') || 'gemini-2.0-flash',
+  model: localStorage.getItem('hackerai_model') || 'gemini-3.8-flash',
   systemPrompt: localStorage.getItem('hackerai_system') || 'تو یک دستیار هوشمند و مفید هستی. پاسخ‌ها را واضح و مرتب بنویس.',
   history: JSON.parse(localStorage.getItem('hackerai_history') || '[]'),
   isOnline: false
