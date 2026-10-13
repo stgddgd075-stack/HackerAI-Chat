@@ -21,7 +21,7 @@ init(); setInterval(draw, 50); addEventListener('resize', init);
 const state = {
   apiKey: localStorage.getItem('hackerai_key') || '',
   model: localStorage.getItem('hackerai_model') || 'gemini-3.8-flash',
-  systemPrompt: localStorage.getItem('hackerai_system') || 'تو یک دستیار هوشمند و مفید هستی. پاسخ‌ها را واضح و مرتب بنویس.',
+  systemPrompt: localStorage.getItem('hackerai_system') || 'تو یک دستیار هوشمند و مفید هستی. پاسخ‌ها را واضح، کوتاه و مرتب بنویس.',
   history: JSON.parse(localStorage.getItem('hackerai_history') || '[]'),
   isOnline: false,
   mode: 'chat',
@@ -154,9 +154,10 @@ function appendMsg(role, content, save = true) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
   if (save && (role === 'user' || role === 'bot')) {
     state.history.push({ role, content });
-    if (state.history.length > 40) state.history = state.history.slice(-40);
+    if (state.history.length > 20) state.history = state.history.slice(-20);
     localStorage.setItem('hackerai_history', JSON.stringify(state.history));
   }
+  return div;
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
@@ -168,43 +169,46 @@ $('clear-chat').onclick = () => {
 async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || !state.isOnline) return;
-  userInput.value = ''; appendMsg('user', text);
+  userInput.value = '';
+  appendMsg('user', text);
+  sendBtn.disabled = true;
 
-  const typing = document.createElement('div');
-  typing.className = 'msg bot'; typing.id = 'typing';
-  typing.innerHTML = `<div class="msg-role">HACKERAI</div><div class="bubble">در حال پردازش...</div>`;
-  messagesEl.appendChild(typing); messagesEl.scrollTop = messagesEl.scrollHeight;
+  // Create empty bot bubble for streaming
+  const botDiv = document.createElement('div');
+  botDiv.className = 'msg bot';
+  botDiv.innerHTML = `<div class="msg-role">HACKERAI</div><div class="bubble" id="stream-bubble">▌</div>`;
+  messagesEl.appendChild(botDiv);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  const bubble = botDiv.querySelector('#stream-bubble');
 
   try {
     let prompt = text;
     if (state.mode === 'image')
-      prompt = `کاربر می‌خواهد عکس بسازد. چون کلید رایگان Gemini تولید واقعی عکس ندارد، یک پرامپت خیلی حرفه‌ای انگلیسی برای Midjourney/Flux بنویس و بعد ترجمه کوتاه فارسی.
-
-موضوع: ${text}`;
+      prompt = `پرامپت حرفه‌ای انگلیسی برای ساخت عکس (Midjourney/Flux) بنویس + ترجمه کوتاه فارسی.\nموضوع: ${text}`;
     else if (state.mode === 'music')
-      prompt = `یک شعر کامل و زیبا (ترجیحاً فارسی) با ورس و کورس بنویس و سبک پیشنهادی بگو.
-
-درخواست: ${text}`;
+      prompt = `شعر کامل فارسی با ورس و کورس + سبک پیشنهادی.\nدرخواست: ${text}`;
     else if (state.mode === 'code')
-      prompt = `تو برنامه‌نویس حرفه‌ای هستی. کد تمیز و توضیح‌دار بنویس:
+      prompt = `کد تمیز و کوتاه با توضیح:\n${text}`;
 
-${text}`;
+    const fullText = await callGeminiStream(prompt, bubble);
 
-    const reply = await callGemini(prompt);
-    $('typing')?.remove(); appendMsg('bot', reply);
+    // Save final to history
+    state.history.push({ role: 'bot', content: fullText });
+    if (state.history.length > 20) state.history = state.history.slice(-20);
+    localStorage.setItem('hackerai_history', JSON.stringify(state.history));
 
     if (window.speechSynthesis && state.lastWasVoice) {
-      const u = new SpeechSynthesisUtterance(reply.slice(0, 280));
+      const u = new SpeechSynthesisUtterance(fullText.slice(0, 250));
       u.lang = 'fa-IR'; speechSynthesis.speak(u);
       state.lastWasVoice = false;
     }
   } catch (err) {
-    $('typing')?.remove();
-    appendMsg('bot', '✗ ' + (err.message || 'خطا'));
-    if (/API key|403|401/i.test(err.message || '')) {
-      updateStatus(false); showToast('کلید نامعتبر');
+    bubble.textContent = '✗ ' + (err.message || 'خطا');
+    if (/API key|403|401|quota|rate/i.test(err.message || '')) {
+      updateStatus(false); showToast('کلید یا محدودیت');
     }
   }
+  sendBtn.disabled = !state.isOnline;
 }
 
 sendBtn.onclick = sendMessage;
@@ -212,10 +216,13 @@ userInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
-async function callGemini(userText) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:generateContent?key=${state.apiKey}`;
+// ===== Streaming Gemini =====
+async function callGeminiStream(userText, bubbleEl) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:streamGenerateContent?alt=sse&key=${state.apiKey}`;
+
   const contents = [];
-  state.history.slice(-8).forEach(h => {
+  // فقط ۴ پیام آخر برای سرعت بیشتر
+  state.history.slice(-4).forEach(h => {
     contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] });
   });
   contents.push({ role: 'user', parts: [{ text: userText }] });
@@ -226,14 +233,50 @@ async function callGemini(userText) {
     body: JSON.stringify({
       contents,
       systemInstruction: { parts: [{ text: state.systemPrompt }] },
-      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1024  // کمتر = سریع‌تر
+      }
     })
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('پاسخی نیامد');
-  return text;
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `HTTP ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE lines
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const jsonStr = line.slice(6).trim();
+      if (!jsonStr || jsonStr === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(jsonStr);
+        const chunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (chunk) {
+          full += chunk;
+          bubbleEl.textContent = full + '▌';
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+      } catch {}
+    }
+  }
+
+  bubbleEl.textContent = full || 'پاسخی نیامد';
+  return full;
 }
 
 function showToast(msg) {
