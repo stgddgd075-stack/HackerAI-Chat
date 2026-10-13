@@ -103,12 +103,12 @@ function setMode(m) {
   if (m !== 'chat' && modes[m]) modes[m].classList.add('active');
   const ph = {
     chat: 'دستور خود را بنویس...',
-    image: 'توضیح عکس (مثال: گربه فضانورد)...',
+    image: 'توضیح عکس را بنویس (مثال: گربه فضانورد روی ماه)...',
     music: 'موضوع یا سبک آهنگ...',
     code: 'سوال یا کد برنامه‌نویسی...'
   };
   userInput.placeholder = ph[m] || ph.chat;
-  showToast(m === 'chat' ? 'چت عادی' : m === 'image' ? 'حالت عکس' : m === 'music' ? 'حالت آهنگ' : 'حالت کد');
+  showToast(m === 'chat' ? 'چت عادی' : m === 'image' ? 'حالت ساخت عکس واقعی' : m === 'music' ? 'حالت آهنگ' : 'حالت کد');
 }
 modes.image.onclick = () => setMode(state.mode === 'image' ? 'chat' : 'image');
 modes.music.onclick = () => setMode(state.mode === 'music' ? 'chat' : 'music');
@@ -142,8 +142,11 @@ btnVoice.onclick = () => isListening ? stopListen() : startListen();
 
 // ===== Chat =====
 function renderHistory() {
-  messagesEl.innerHTML = `<div class="msg system"><div class="bubble">SYSTEM // از دکمه‌های بالا برای عکس، آهنگ، کد و صدا استفاده کن.</div></div>`;
-  state.history.forEach(m => appendMsg(m.role, m.content, false));
+  messagesEl.innerHTML = `<div class="msg system"><div class="bubble">SYSTEM // از دکمه‌های بالا برای عکس واقعی، آهنگ، کد و صدا استفاده کن.</div></div>`;
+  state.history.forEach(m => {
+    if (m.type === 'image') appendImageMsg(m.content, false);
+    else appendMsg(m.role, m.content, false);
+  });
 }
 function appendMsg(role, content, save = true) {
   const div = document.createElement('div');
@@ -159,6 +162,18 @@ function appendMsg(role, content, save = true) {
   }
   return div;
 }
+function appendImageMsg(dataUrl, save = true) {
+  const div = document.createElement('div');
+  div.className = 'msg bot';
+  div.innerHTML = `<div class="msg-role">HACKERAI</div><div class="bubble"><img src="${dataUrl}" style="max-width:100%;border-radius:8px;display:block" alt="generated"></div>`;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (save) {
+    state.history.push({ role: 'bot', type: 'image', content: dataUrl });
+    if (state.history.length > 20) state.history = state.history.slice(-20);
+    localStorage.setItem('hackerai_history', JSON.stringify(state.history));
+  }
+}
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 $('clear-chat').onclick = () => {
@@ -173,39 +188,44 @@ async function sendMessage() {
   appendMsg('user', text);
   sendBtn.disabled = true;
 
-  // Create empty bot bubble for streaming
   const botDiv = document.createElement('div');
   botDiv.className = 'msg bot';
-  botDiv.innerHTML = `<div class="msg-role">HACKERAI</div><div class="bubble" id="stream-bubble">▌</div>`;
+  botDiv.innerHTML = `<div class="msg-role">HACKERAI</div><div class="bubble" id="stream-bubble">در حال پردازش...▌</div>`;
   messagesEl.appendChild(botDiv);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   const bubble = botDiv.querySelector('#stream-bubble');
 
   try {
-    let prompt = text;
-    if (state.mode === 'image')
-      prompt = `پرامپت حرفه‌ای انگلیسی برای ساخت عکس (Midjourney/Flux) بنویس + ترجمه کوتاه فارسی.\nموضوع: ${text}`;
-    else if (state.mode === 'music')
-      prompt = `شعر کامل فارسی با ورس و کورس + سبک پیشنهادی.\nدرخواست: ${text}`;
-    else if (state.mode === 'code')
-      prompt = `کد تمیز و کوتاه با توضیح:\n${text}`;
+    if (state.mode === 'image') {
+      // ===== Real Image Generation =====
+      bubble.textContent = 'در حال ساخت عکس واقعی...';
+      const dataUrl = await generateImage(text);
+      botDiv.remove();
+      appendImageMsg(dataUrl);
+      showToast('عکس ساخته شد');
+    } else {
+      // Text modes (chat / music / code)
+      let prompt = text;
+      if (state.mode === 'music')
+        prompt = `شعر کامل فارسی با ورس و کورس + سبک پیشنهادی.\nدرخواست: ${text}`;
+      else if (state.mode === 'code')
+        prompt = `کد تمیز و کوتاه با توضیح:\n${text}`;
 
-    const fullText = await callGeminiStream(prompt, bubble);
+      const fullText = await callGeminiStream(prompt, bubble);
+      state.history.push({ role: 'bot', content: fullText });
+      if (state.history.length > 20) state.history = state.history.slice(-20);
+      localStorage.setItem('hackerai_history', JSON.stringify(state.history));
 
-    // Save final to history
-    state.history.push({ role: 'bot', content: fullText });
-    if (state.history.length > 20) state.history = state.history.slice(-20);
-    localStorage.setItem('hackerai_history', JSON.stringify(state.history));
-
-    if (window.speechSynthesis && state.lastWasVoice) {
-      const u = new SpeechSynthesisUtterance(fullText.slice(0, 250));
-      u.lang = 'fa-IR'; speechSynthesis.speak(u);
-      state.lastWasVoice = false;
+      if (window.speechSynthesis && state.lastWasVoice) {
+        const u = new SpeechSynthesisUtterance(fullText.slice(0, 250));
+        u.lang = 'fa-IR'; speechSynthesis.speak(u);
+        state.lastWasVoice = false;
+      }
     }
   } catch (err) {
     bubble.textContent = '✗ ' + (err.message || 'خطا');
-    if (/API key|403|401|quota|rate/i.test(err.message || '')) {
-      updateStatus(false); showToast('کلید یا محدودیت');
+    if (/API key|403|401|quota|billing|permission|not available|image/i.test(err.message || '')) {
+      showToast('کلید باید پولی باشد یا مدل عکس پشتیبانی نمی‌شود');
     }
   }
   sendBtn.disabled = !state.isOnline;
@@ -216,13 +236,75 @@ userInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
-// ===== Streaming Gemini =====
+// ===== Real Image Generation (Paid keys) =====
+async function generateImage(prompt) {
+  // Models that support native image generation (need billing)
+  const imageModels = [
+    'gemini-3.1-flash-image',
+    'gemini-3.1-flash-lite-image',
+    'gemini-3-pro-image',
+    'gemini-2.5-flash-image'
+  ];
+
+  let lastError = null;
+
+  for (const model of imageModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${state.apiKey}`;
+
+      const body = {
+        contents: [{
+          role: 'user',
+          parts: [{ text: `Generate an image: ${prompt}` }]
+        }],
+        generationConfig: {
+          responseModalities: ['TEXT', 'IMAGE'],
+          // some models use imageConfig
+        }
+      };
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        lastError = data.error?.message || `HTTP ${res.status}`;
+        continue;
+      }
+
+      // Look for inline image data
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
+          const b64 = part.inlineData.data;
+          const mime = part.inlineData.mimeType || 'image/png';
+          return `data:${mime};base64,${b64}`;
+        }
+        // some responses put image in different structure
+        if (part.inline_data && part.inline_data.mime_type?.startsWith('image/')) {
+          return `data:${part.inline_data.mime_type};base64,${part.inline_data.data}`;
+        }
+      }
+
+      lastError = 'تصویری در پاسخ نبود';
+    } catch (e) {
+      lastError = e.message;
+    }
+  }
+
+  throw new Error(lastError || 'ساخت عکس ممکن نشد. کلید پولی با دسترسی تصویر لازم است.');
+}
+
+// ===== Streaming text =====
 async function callGeminiStream(userText, bubbleEl) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:streamGenerateContent?alt=sse&key=${state.apiKey}`;
 
   const contents = [];
-  // فقط ۴ پیام آخر برای سرعت بیشتر
-  state.history.slice(-4).forEach(h => {
+  state.history.filter(h => !h.type).slice(-4).forEach(h => {
     contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] });
   });
   contents.push({ role: 'user', parts: [{ text: userText }] });
@@ -233,10 +315,7 @@ async function callGeminiStream(userText, bubbleEl) {
     body: JSON.stringify({
       contents,
       systemInstruction: { parts: [{ text: state.systemPrompt }] },
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1024  // کمتر = سریع‌تر
-      }
+      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
     })
   });
 
@@ -254,11 +333,8 @@ async function callGeminiStream(userText, bubbleEl) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-
-    // SSE lines
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
-
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
       const jsonStr = line.slice(6).trim();
