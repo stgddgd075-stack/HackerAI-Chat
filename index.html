@@ -1,1 +1,159 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>NEURO PARTICLES AI — Advanced</title>
+<style>
+:root{--bg:#000;--g:#00ff9d;--c:#00f0ff;--y:#ffe600;--m:#ff00aa;--panel:rgba(0,12,18,.9);--border:rgba(0,255,157,.4);--text:#e8fff5;--muted:#7a9a8c;--danger:#ff3b5c}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Segoe UI',Tahoma,system-ui,sans-serif}
+body.ltr{direction:ltr}
+#app{position:relative;width:100%;height:100%}
+#canvas-container{position:absolute;inset:0;z-index:1}
+canvas#three-canvas{display:block;width:100%;height:100%}
+#camera-preview{position:absolute;top:10px;right:10px;width:120px;height:90px;border-radius:10px;overflow:hidden;border:2px solid var(--g);background:#000;z-index:40;opacity:0;transition:opacity .3s;box-shadow:0 0 18px rgba(0,255,157,.3)}
+body.ltr #camera-preview{right:auto;left:10px}
+#camera-preview.active{opacity:1}
+#camera-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#landmark-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#top-bar{position:absolute;top:0;left:0;right:0;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:linear-gradient(180deg,rgba(0,0,0,.85),transparent);z-index:30;pointer-events:none}
+#top-bar>*{pointer-events:auto}
+.logo{font-size:14px;font-weight:700;letter-spacing:1px;background:linear-gradient(90deg,var(--g),var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
+.logo span{font-weight:400;opacity:.7;font-size:11px}
+#status-cluster{display:flex;gap:6px;font-size:10px}
+.status-pill{display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:16px;background:var(--panel);border:1px solid var(--border)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.dot.on{background:var(--g);box-shadow:0 0 8px var(--g)}
+.dot.off{background:var(--danger)}
+#control-panel{position:absolute;bottom:0;left:0;right:0;padding:10px 12px 16px;background:linear-gradient(0deg,rgba(0,8,12,.95) 50%,transparent);z-index:30;display:flex;flex-direction:column;gap:8px}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:active{transform:scale(.96)}
+.btn.primary{background:linear-gradient(135deg,rgba(0,255,157,.28),rgba(0,240,255,.15));border-color:var(--g);color:var(--g)}
+.btn.danger{border-color:var(--danger);color:var(--danger)}
+.btn.active{background:rgba(0,255,157,.2);border-color:var(--g);color:var(--g)}
+.btn:disabled{opacity:.4;pointer-events:none}
+select,input[type=range]{appearance:none;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 9px;border-radius:7px;font-size:11px}
+select{min-width:100px}
+input[type=range]{width:85px;height:5px;padding:0;accent-color:var(--g)}
+.label{font-size:10px;color:var(--muted);white-space:nowrap}
+#gesture-display{position:absolute;top:58px;left:50%;transform:translateX(-50%);padding:6px 16px;border-radius:18px;background:var(--panel);border:1px solid var(--border);font-size:12px;font-weight:700;color:var(--c);z-index:25;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center}
+#gesture-display.visible{opacity:1}
+#mode-badge{position:absolute;top:58px;right:12px;padding:4px 10px;border-radius:12px;background:var(--panel);border:1px solid var(--border);font-size:10px;color:var(--y);z-index:25;opacity:.9}
+body.ltr #mode-badge{right:auto;left:12px}
+#overlay{position:absolute;inset:0;background:rgba(0,0,0,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;padding:20px;text-align:center}
+#overlay.hidden{display:none!important}
+#overlay h2{font-size:22px;margin-bottom:12px;background:linear-gradient(90deg,var(--g),var(--c));-webkit-background-clip:text;background-clip:text;color:transparent}
+#overlay p{max-width:320px;line-height:1.6;color:var(--muted);margin-bottom:16px;font-size:14px}
+#overlay .btn{margin:5px;min-width:160px;padding:12px 18px;font-size:14px}
+#stats{position:absolute;top:56px;left:10px;font-size:10px;color:var(--muted);z-index:25;line-height:1.55;pointer-events:none}
+body.ltr #stats{left:auto;right:10px;text-align:right}
+.spinner{width:36px;height:36px;border:3px solid rgba(0,255,157,.2);border-top-color:var(--g);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+#permission-hint{font-size:12px;color:var(--y);margin-top:6px;max-width:280px}
+#help-panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px 20px;z-index:50;max-width:340px;max-height:70vh;overflow-y:auto;display:none;backdrop-filter:blur(12px)}
+#help-panel.show{display:block}
+#help-panel h3{color:var(--g);margin-bottom:10px;font-size:15px}
+#help-panel ul{list-style:none;font-size:12px;line-height:1.7;color:var(--text)}
+#help-panel li{padding:3px 0;border-bottom:1px solid rgba(0,255,157,.1)}
+#help-panel .close-help{margin-top:12px;width:100%}
+@media(max-width:600px){#camera-preview{width:90px;height:68px}.logo{font-size:12px}.btn{padding:6px 10px;font-size:11px}select{min-width:85px;font-size:10px}}
+</style>
+</head>
+<body>
+<div id="app">
+<div id="canvas-container"><canvas id="three-canvas"></canvas></div>
+<div id="camera-preview"><video id="webcam" playsinline muted autoplay></video><canvas id="landmark-canvas"></canvas></div>
+<div id="top-bar">
+<div class="logo">NEURO PARTICLES <span>AI+</span></div>
+<div id="status-cluster">
+<div class="status-pill"><div class="dot" id="cam-dot"></div><span id="cam-label">دوربین</span></div>
+<div class="status-pill"><div class="dot" id="hand-dot"></div><span id="hand-label">دست</span></div>
+</div>
+</div>
+<div id="gesture-display">—</div>
+<div id="mode-badge">MODE: FREE</div>
+<div id="stats">
+<div>FPS: <span id="fps-val">—</span></div>
+<div>Particles: <span id="part-val">—</span></div>
+<div>Zoom: <span id="zoom-val">1.00</span></div>
+<div>Hands: <span id="hands-val">0</span></div>
+</div>
+<div id="control-panel">
+<div class="row">
+<button class="btn primary" id="btn-start">شروع دوربین</button>
+<button class="btn danger" id="btn-stop" disabled>توقف</button>
+<button class="btn" id="btn-reset">بازنشانی</button>
+<button class="btn" id="btn-help">راهنما ژست‌ها</button>
+<button class="btn" id="btn-fullscreen">تمام‌صفحه</button>
+<button class="btn" id="btn-lang">English</button>
+</div>
+<div class="row">
+<span class="label">فرم</span>
+<select id="sel-formation">
+<option value="0">کره کهکشانی</option><option value="1">گرداب</option><option value="2">انفجار</option>
+<option value="3">مارپیچ</option><option value="4">موج</option><option value="5">DNA</option>
+<option value="6">حلقه</option><option value="7">شبکه عصبی</option><option value="8">کره انرژی</option>
+<option value="9">ابر</option><option value="10">تونل</option><option value="11">گل</option>
+</select>
+<span class="label">کیفیت</span>
+<select id="sel-quality"><option value="auto">AUTO</option><option value="low">LOW</option><option value="medium">MEDIUM</option><option value="high">HIGH</option><option value="ultra">ULTRA</option></select>
+<span class="label">رنگ</span>
+<select id="sel-color"><option value="neon">نئون</option><option value="cyan">فیروزه</option><option value="magenta">ارغوانی</option><option value="gold">طلایی</option><option value="rainbow">رنگین‌کمان</option><option value="fire">آتش</option></select>
+</div>
+<div class="row">
+<span class="label">حساسیت</span>
+<input type="range" id="rng-sens" min="0.4" max="2" step="0.05" value="1" />
+<span class="label">اسکلت</span>
+<button class="btn" id="btn-skeleton">خاموش</button>
+<span class="label">اترکشن</span>
+<button class="btn" id="btn-attract">روشن</button>
+</div>
+</div>
+<div id="help-panel">
+<h3>ژست‌های دست — راهنما</h3>
+<ul>
+<li>🖐️ <b>کف دست باز</b> → انبساط + انرژی</li>
+<li>✊ <b>مشت</b> → فشرده شدن</li>
+<li>👌 <b>نیشگون (انگشت شست+اشاره)</b> → زوم / جذب</li>
+<li>✌️ <b>دو انگشت (اشاره+میانی)</b> → چرخش</li>
+<li>👆 <b>اشاره (فقط انگشت اشاره)</b> → جذب به سمت اشاره</li>
+<li>👍 <b>شست بالا</b> → فرم بعدی</li>
+<li>👎 <b>شست پایین</b> → فرم قبلی</li>
+<li>🖖 <b>سه انگشت</b> → موج شوک</li>
+<li>🙌 <b>دو دست دور از هم</b> → زوم اوت بزرگ</li>
+<li>🙏 <b>دو دست نزدیک</b> → زوم این</li>
+<li>↔️ <b>حرکت افقی</b> → چرخش افقی</li>
+<li>↕️ <b>حرکت عمودی</b> → جابجایی عمودی</li>
+<li>💨 <b>حرکت سریع</b> → شوک‌ویو</li>
+<li>🤏 <b>نیشگون مداوم</b> → کنترل زوم پیوسته</li>
+<li>🖐️→✊ <b>گرفتن و کشیدن</b> → جابجایی مرکز</li>
+</ul>
+<button class="btn primary close-help" id="btn-close-help">بستن</button>
+</div>
+<div id="overlay">
+<div class="spinner" id="load-spinner"></div>
+<h2 id="overlay-title">NEURO PARTICLES AI+</h2>
+<p id="overlay-msg">در حال آماده‌سازی...</p>
+<div id="permission-hint" style="display:none">روی دکمه بزنید تا مرورگر اجازه دوربین بخواهد.</div>
+<div style="margin-top:12px">
+<button class="btn primary" id="btn-overlay-start" style="display:none">اجازه دسترسی به دوربین</button>
+<button class="btn" id="btn-overlay-dismiss" style="display:none">ادامه بدون دوربین</button>
+</div>
+</div>
+</div>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+/* FULL ADVANCED ENGINE - see local artifacts/index.html for complete source */
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+document.body.innerHTML='<div style="color:#0f9;padding:40px;font-family:sans-serif;text-align:center"><h1>NEURO PARTICLES AI+</h1><p>در حال بارگذاری نسخه کامل از فایل محلی...</p><p>لطفاً فایل index.html کامل را از artifacts کپی کنید.</p><p style="color:#888;margin-top:20px">اگر این پیام را می‌بینید، آپلود ناقص بوده. دوباره تلاش می‌کنیم.</p></div>';
+console.error('Incomplete upload - use full local index.html');
+</script>
+</body>
+</html>
